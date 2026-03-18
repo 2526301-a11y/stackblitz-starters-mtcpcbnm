@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>手勢控制 3D 方塊</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    #video-container {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 240px;
+      border: 2px solid #00ffcc;
+      border-radius: 10px;
+      transform: scaleX(-1); /* 鏡像翻轉，讓動作更直覺 */
+    }
+    #status {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #00ffcc;
+      font-family: "Microsoft JhengHei", sans-serif;
+      font-size: 1.2rem;
+      text-shadow: 1px 1px 5px black;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="status">正在啟動 AI 模型...</div>
+  <video id="input_video" style="display:none"></video>
+  <canvas id="video-preview"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <script>
+    const videoElement = document.getElementById('input_video');
+    const statusDiv = document.getElementById('status');
+
+    // --- 1. Three.js 場景設定 ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // 建立方塊
+    const geometry = new THREE.BoxGeometry(2, 2, 2);
+    const material = new THREE.MeshNormalMaterial(); // 使用法線材質，顏色會隨旋轉改變
+    const cube = new THREE.Mesh(geometry, material);
+    scene.add(cube);
+    camera.position.z = 5;
+
+    // --- 2. MediaPipe 手勢處理 ---
+    function onResults(results) {
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        statusDiv.innerText = "偵測到手部 - 移動食指來旋轉方塊";
+        
+        // 取得第一隻手的食指指尖 (Landmark 8)
+        const hand = results.multiHandLandmarks[0];
+        const indexTip = hand[8];
+
+        // 將 MediaPipe 的 0~1 座標轉換為旋轉弧度
+        // indexTip.x 從左到右 (0~1)，indexTip.y 從上到下 (0~1)
+        cube.rotation.y = (indexTip.x - 0.5) * 8;
+        cube.rotation.x = (indexTip.y - 0.5) * 8;
+      } else {
+        statusDiv.innerText = "請將手放在攝影機前";
+      }
+      renderer.render(scene, camera);
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+
+    hands.onResults(onResults);
+
+    // --- 3. 攝影機啟動 ---
+    const cameraHelper = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
+    });
+    cameraHelper.start();
+
+    // 視窗大小調整處理
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
